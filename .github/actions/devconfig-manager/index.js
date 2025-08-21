@@ -55,17 +55,11 @@ async function handleValidate({
 
   // Analyze changes first
   const changes = await fileAnalyzer.analyzeChanges();
-  const needsDevConfig = changes.coreChanges > 0 || changes.serviceChanges.length > 0;
   
-  core.setOutput('needs-devconfig', needsDevConfig.toString());
-
-  if (!needsDevConfig) {
-    core.info('No changes detected, DevConfig is not needed');
-    core.setOutput('has-devconfig', 'true'); // Not needed, so consider as satisfied
-    return;
-  }
-
   core.info(`Changes detected - Core: ${changes.coreChanges}, Services: ${changes.serviceChanges.length}`);
+  
+  // All PRs need DevConfig (simplified logic)
+  core.setOutput('needs-devconfig', 'true');
 
   // Check for existing DevConfig files
   const hasDevConfig = await fileOps.hasExistingDevConfig();
@@ -101,7 +95,7 @@ async function handleValidate({
   // Write results to file for artifact upload
   const results = {
     prNumber: parseInt(prNumber),
-    needsDevConfig: needsDevConfig,
+    needsDevConfig: true, // All PRs need DevConfig now
     hasDevConfig: hasDevConfig,
     validation: validation,
     devConfigContent: devConfigContent,

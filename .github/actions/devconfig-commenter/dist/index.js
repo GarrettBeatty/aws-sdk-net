@@ -89,14 +89,7 @@ async function postDevConfigComment(octokit, context, results) {
     // Clean up any existing DevConfig labels first
     await removeDevConfigLabels(octokit, context, results.prNumber);
 
-    // Determine what label to add based on results
-    if (!results.needsDevConfig) {
-      // No DevConfig needed
-      await addDevConfigLabel(octokit, context, results.prNumber, 'devconfig-not-needed');
-      core.info('No DevConfig needed - added devconfig-not-needed label');
-      return;
-    }
-
+    // Determine what label to add based on DevConfig status
     if (results.validation && !results.validation.isValid) {
       // DevConfig exists but is invalid
       const commentBody = generateValidationErrorComment(results);
@@ -104,11 +97,11 @@ async function postDevConfigComment(octokit, context, results) {
       await addDevConfigLabel(octokit, context, results.prNumber, 'devconfig-required');
       core.info('DevConfig validation failed - posted comment and added devconfig-required label');
     } else if (!results.hasDevConfig) {
-      // DevConfig needed but missing
+      // DevConfig missing (all PRs need DevConfig)
       const commentBody = generatePreviewComment(results);
       await postComment(octokit, context, results.prNumber, commentBody);
       await addDevConfigLabel(octokit, context, results.prNumber, 'devconfig-required');
-      core.info('DevConfig needed but missing - posted comment and added devconfig-required label');
+      core.info('DevConfig missing - posted comment and added devconfig-required label');
     } else {
       // DevConfig exists and is valid
       await addDevConfigLabel(octokit, context, results.prNumber, 'devconfig-complete');
