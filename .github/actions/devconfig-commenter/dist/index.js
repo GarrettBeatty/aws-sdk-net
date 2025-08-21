@@ -86,14 +86,10 @@ async function downloadAndProcessArtifacts(octokit, context, workflowRunId) {
 
 async function postDevConfigComment(octokit, context, results) {
   try {
-    // Determine what label to add based on results
-    if (!results.needsDevConfig) {
-      // No DevConfig needed
-      await addDevConfigLabel(octokit, context, results.prNumber, 'devconfig-not-needed');
-      core.info('No DevConfig needed - added devconfig-not-needed label');
-      return;
-    }
+    // Clean up any existing DevConfig labels first
+    await removeDevConfigLabels(octokit, context, results.prNumber);
 
+    // Determine what label to add based on DevConfig status
     if (results.validation && !results.validation.isValid) {
       // DevConfig exists but is invalid
       const commentBody = generateValidationErrorComment(results);
@@ -101,11 +97,11 @@ async function postDevConfigComment(octokit, context, results) {
       await addDevConfigLabel(octokit, context, results.prNumber, 'devconfig-required');
       core.info('DevConfig validation failed - posted comment and added devconfig-required label');
     } else if (!results.hasDevConfig) {
-      // DevConfig needed but missing
+      // DevConfig missing (all PRs need DevConfig)
       const commentBody = generatePreviewComment(results);
       await postComment(octokit, context, results.prNumber, commentBody);
       await addDevConfigLabel(octokit, context, results.prNumber, 'devconfig-required');
-      core.info('DevConfig needed but missing - posted comment and added devconfig-required label');
+      core.info('DevConfig missing - posted comment and added devconfig-required label');
     } else {
       // DevConfig exists and is valid
       await addDevConfigLabel(octokit, context, results.prNumber, 'devconfig-complete');
@@ -126,6 +122,42 @@ async function postComment(octokit, context, prNumber, commentBody) {
     body: commentBody
   });
   core.info(`DevConfig comment posted successfully to PR #${prNumber}`);
+}
+
+async function removeDevConfigLabels(octokit, context, prNumber) {
+  const devConfigLabels = ['devconfig-required', 'devconfig-complete', 'devconfig-not-needed'];
+  
+  try {
+    // Get current PR labels
+    const { data: issue } = await octokit.rest.issues.get({
+      owner: context.repo.owner,
+      repo: context.repo.repo,
+      issue_number: prNumber
+    });
+
+    const currentLabels = issue.labels.map(label => label.name);
+    const labelsToRemove = devConfigLabels.filter(label => currentLabels.includes(label));
+
+    if (labelsToRemove.length > 0) {
+      core.info(`Removing existing DevConfig labels: ${labelsToRemove.join(', ')}`);
+      
+      for (const labelName of labelsToRemove) {
+        await octokit.rest.issues.removeLabel({
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          issue_number: prNumber,
+          name: labelName
+        });
+      }
+      
+      core.info('Existing DevConfig labels removed successfully');
+    } else {
+      core.info('No existing DevConfig labels to remove');
+    }
+  } catch (error) {
+    core.warning(`Failed to remove existing DevConfig labels: ${error.message}`);
+    // Don't throw - labeling is not critical
+  }
 }
 
 async function addDevConfigLabel(octokit, context, prNumber, labelName) {
