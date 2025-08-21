@@ -57,24 +57,46 @@ async function handleValidate({
     return;
   }
 
+  // Analyze changes first
+  const changes = await fileAnalyzer.analyzeChanges();
+  const needsDevConfig = changes.coreChanges > 0 || changes.serviceChanges.length > 0;
+  
+  core.setOutput('needs-devconfig', needsDevConfig.toString());
+
+  if (!needsDevConfig) {
+    core.info('No changes detected, DevConfig is not needed');
+    core.setOutput('has-devconfig', 'true'); // Not needed, so consider as satisfied
+    return;
+  }
+
+  core.info(`Changes detected - Core: ${changes.coreChanges}, Services: ${changes.serviceChanges.length}`);
+
   // Check for existing DevConfig files
   const hasDevConfig = await fileOps.hasExistingDevConfig();
   core.setOutput('has-devconfig', hasDevConfig.toString());
 
   if (hasDevConfig) {
-    core.info('DevConfig files already exist in this PR');
-    core.setOutput('needs-devconfig', 'false');
-    return;
-  }
+    core.info('DevConfig files exist in this PR, validating contents...');
+    
+    // Validate DevConfig contents against detected changes
+    const validation = await fileOps.validateDevConfigContents(changes);
+    
+    if (validation.isValid) {
+      core.info('DevConfig validation passed - all changes are covered');
+      return;
+    } else {
+      core.warning('DevConfig validation failed - missing services or core section');
+      
+      // Generate corrected DevConfig suggestion
+      const devConfigContent = await devConfigGenerator.generate(prTitle, changes);
+      core.setOutput('devconfig-content', devConfigContent);
 
-  // Analyze changes
-  const changes = await fileAnalyzer.analyzeChanges();
-  const needsDevConfig = changes.coreChanges > 0 || changes.serviceChanges.length > 0;
-
-  core.setOutput('needs-devconfig', needsDevConfig.toString());
-
-  if (needsDevConfig) {
-    core.info(`Changes detected - Core: ${changes.coreChanges}, Services: ${changes.serviceChanges.length}`);
+      // Post validation error comment
+      await githubApi.postDevConfigValidationError(prNumber, validation, devConfigContent);
+      return; // Let workflow fail step handle the failure
+    }
+  } else {
+    core.info('No DevConfig files found in this PR');
     
     // Generate preview DevConfig
     const devConfigContent = await devConfigGenerator.generate(prTitle, changes);
@@ -82,8 +104,6 @@ async function handleValidate({
 
     // Post comment with preview
     await githubApi.postDevConfigPreviewComment(prNumber, devConfigContent);
-  } else {
-    core.info('No changes detected, DevConfig is not needed');
   }
 }
 
