@@ -410,37 +410,42 @@ module.exports = FileAnalyzer;
 const core = __nccwpck_require__(7484);
 const fs = (__nccwpck_require__(9896).promises);
 const path = __nccwpck_require__(6928);
+const simpleGit = __nccwpck_require__(9065);
 
 class FileOperations {
   constructor() {
     this.devConfigDir = './generator/.DevConfigs';
+    this.git = simpleGit();
   }
 
   /**
-   * Check if DevConfig files already exist in the repository
-   * @returns {boolean} - True if DevConfig files exist
+   * Check if DevConfig files were added/modified in this PR
+   * @returns {boolean} - True if DevConfig files were changed in this PR
    */
   async hasExistingDevConfig() {
-    core.info('Checking for existing DevConfig files...');
+    core.info('Checking if DevConfig files were added/modified in this PR...');
 
     try {
-      // Check if .DevConfigs directory exists
-      const dirExists = await this.directoryExists(this.devConfigDir);
-      if (!dirExists) {
-        core.info('DevConfig directory does not exist');
-        return false;
-      }
+      // Get list of changed files compared to origin/main
+      const diffResult = await this.git.diff(['--name-only', 'origin/main...']);
+      const changedFiles = diffResult.split('\n').filter(file => file.trim() !== '');
 
-      // Check if directory has any .json files
-      const files = await fs.readdir(this.devConfigDir);
-      const jsonFiles = files.filter(file => file.endsWith('.json'));
+      // Filter for DevConfig files that were added/modified in this PR
+      const devConfigChanges = changedFiles.filter(file => 
+        file.startsWith('generator/.DevConfigs/') && file.endsWith('.json')
+      );
 
-      const hasFiles = jsonFiles.length > 0;
-      core.info(`Found ${jsonFiles.length} DevConfig files: ${jsonFiles.join(', ')}`);
+      const hasDevConfigChanges = devConfigChanges.length > 0;
       
-      return hasFiles;
+      if (hasDevConfigChanges) {
+        core.info(`Found ${devConfigChanges.length} DevConfig files changed in this PR: ${devConfigChanges.join(', ')}`);
+      } else {
+        core.info('No DevConfig files were added/modified in this PR');
+      }
+      
+      return hasDevConfigChanges;
     } catch (error) {
-      core.warning(`Error checking for existing DevConfig files: ${error.message}`);
+      core.warning(`Error checking for DevConfig changes: ${error.message}`);
       return false;
     }
   }

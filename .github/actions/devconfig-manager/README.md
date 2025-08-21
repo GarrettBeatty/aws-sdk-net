@@ -2,14 +2,6 @@
 
 A JavaScript-based GitHub Action that analyzes AWS SDK .NET pull requests and suggests DevConfig files. This action replaces the previous shell-script-based workflows with secure, maintainable JavaScript code.
 
-## Features
-
-- **Security**: No shell injection vulnerabilities - all user input is handled safely
-- **Maintainability**: Clean JavaScript modules with proper error handling
-- **Testability**: Each component can be unit tested independently
-- **Performance**: Faster execution compared to complex shell scripts
-- **Universal Compatibility**: Works for all contributors (internal and external)
-
 ## Usage
 
 ```yaml
@@ -38,12 +30,6 @@ A JavaScript-based GitHub Action that analyzes AWS SDK .NET pull requests and su
 - **`lib/github-api.js`**: Posts DevConfig preview comments
 - **`lib/file-operations.js`**: Checks for existing DevConfig files
 
-### Security Features
-
-- All user inputs are passed through environment variables
-- No direct shell interpolation of untrusted data
-- JSON parsing and generation uses native JavaScript
-- No comment processing or file modification capabilities
 
 ## Development
 
@@ -109,26 +95,6 @@ This PR requires a DevConfig file. Here's the suggested DevConfig:
 2. Copy the JSON above into the file
 3. Commit and push the file to your PR
 ```
-
-## Migration from Shell Scripts
-
-### Before (Shell Scripts)
-- Complex bash scripts with ~300 lines
-- Shell injection vulnerabilities
-- Difficult to test and maintain
-- Fork compatibility issues
-
-### After (JavaScript Action)
-- Clean JavaScript modules with ~150 lines total
-- Security by design - no shell injection risks
-- Unit testable components
-- Works for all contributors (internal and external)
-
-## Dependencies
-
-- `@actions/core`: GitHub Actions toolkit
-- `@actions/github`: GitHub API integration
-- `simple-git`: Git operations in Node.js
 
 ## Contributing
 
