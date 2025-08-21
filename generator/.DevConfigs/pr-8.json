@@ -1,0 +1,11 @@
+{
+  "services": [
+    {
+      "serviceName": "ECS",
+      "type": "patch",
+      "changeLogMessages": [
+        "Update GlobalSuppressions.cs"
+      ]
+    }
+  ]
+}
