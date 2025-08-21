@@ -1,0 +1,11 @@
+{
+  "services": [
+    {
+      "serviceName": "ARCRegionswitch",
+      "type": "patch",
+      "changeLogMessages": [
+        "Update license comment in AbbreviatedExecution.cs"
+      ]
+    }
+  ]
+}
