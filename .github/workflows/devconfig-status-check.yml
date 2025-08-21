@@ -1,0 +1,21 @@
+name: DevConfig Status Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check-devconfig:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: DevConfig status check
+        uses: ./.github/actions/devconfig-status-check
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}

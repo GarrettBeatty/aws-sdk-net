@@ -11,14 +11,14 @@ permissions:
   issues: write
 
 jobs:
-  comment:
+  comment-and-label:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Post DevConfig comments
+      - name: Post DevConfig comments and manage labels
         uses: ./.github/actions/devconfig-commenter
         with:
           workflow-run-id: ${{ github.event.workflow_run.id }}
