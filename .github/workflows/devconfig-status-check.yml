@@ -22,23 +22,17 @@ jobs:
             console.log(`Checking DevConfig status for PR #${prNumber}`);
             console.log(`PR labels: ${labels.join(', ')}`);
             
-            // Check for maintainer override or no DevConfig needed
-            if (labels.includes('devconfig-not-needed')) {
-              console.log('✅ DevConfig not needed (devconfig-not-needed label found)');
-              return;
-            }
-            
-            // Check if DevConfig validation passed
+            // Check if DevConfig is complete
             if (labels.includes('devconfig-complete')) {
               console.log('✅ DevConfig validation passed (devconfig-complete label found)');
               return;
             }
             
-            // Check if DevConfig is required but missing/invalid
-            if (labels.includes('devconfig-required')) {
-              core.setFailed('❌ DevConfig file is required but missing or invalid. Please add or fix your DevConfig file, or ask a maintainer to add the "devconfig-not-needed" label if this PR does not require a DevConfig.');
+            // Check for maintainer override - no DevConfig needed
+            if (labels.includes('devconfig-not-needed')) {
+              console.log('✅ DevConfig not needed (devconfig-not-needed label found)');
               return;
             }
             
-            // No relevant DevConfig labels found - conservative approach
-            core.setFailed('❌ DevConfig status unknown. Waiting for DevConfig validation to complete. If this persists, please ask a maintainer for assistance.');
+            // Fail if neither completion label is present
+            core.setFailed('❌ DevConfig status incomplete. This PR must have either "devconfig-complete" or "devconfig-not-needed" label added by a maintainer before it can be merged.');
