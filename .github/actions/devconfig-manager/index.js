@@ -1,8 +1,8 @@
 const core = require('@actions/core');
 const github = require('@actions/github');
+const fs = require('fs').promises;
 const DevConfigGenerator = require('./lib/devconfig-generator');
 const FileAnalyzer = require('./lib/file-analyzer');
-const GitHubApi = require('./lib/github-api');
 const FileOperations = require('./lib/file-operations');
 
 async function run() {
@@ -10,7 +10,6 @@ async function run() {
     // Get inputs
     const prTitle = core.getInput('pr-title', { required: true });
     const prNumber = core.getInput('pr-number', { required: true });
-    const githubToken = core.getInput('github-token', { required: true });
     const branchName = core.getInput('branch-name', { required: true });
 
     core.info('Running DevConfig validation...');
@@ -18,7 +17,6 @@ async function run() {
     // Initialize components
     const fileAnalyzer = new FileAnalyzer();
     const devConfigGenerator = new DevConfigGenerator();
-    const githubApi = new GitHubApi(githubToken);
     const fileOps = new FileOperations();
 
     await handleValidate({
@@ -27,7 +25,6 @@ async function run() {
       branchName,
       fileAnalyzer,
       devConfigGenerator,
-      githubApi,
       fileOps
     });
 
@@ -44,7 +41,6 @@ async function handleValidate({
   branchName,
   fileAnalyzer,
   devConfigGenerator,
-  githubApi,
   fileOps
 }) {
   core.info('Validating DevConfig requirements...');
@@ -75,11 +71,14 @@ async function handleValidate({
   const hasDevConfig = await fileOps.hasExistingDevConfig();
   core.setOutput('has-devconfig', hasDevConfig.toString());
 
+  let validation = null;
+  let devConfigContent = null;
+
   if (hasDevConfig) {
     core.info('DevConfig files exist in this PR, validating contents...');
     
     // Validate DevConfig contents against detected changes
-    const validation = await fileOps.validateDevConfigContents(changes);
+    validation = await fileOps.validateDevConfigContents(changes);
     
     if (validation.isValid) {
       core.info('DevConfig validation passed - all changes are covered');
@@ -88,23 +87,29 @@ async function handleValidate({
       core.warning('DevConfig validation failed - missing services or core section');
       
       // Generate corrected DevConfig suggestion
-      const devConfigContent = await devConfigGenerator.generate(prTitle, changes);
+      devConfigContent = await devConfigGenerator.generate(prTitle, changes);
       core.setOutput('devconfig-content', devConfigContent);
-
-      // Post validation error comment
-      await githubApi.postDevConfigValidationError(prNumber, validation, devConfigContent);
-      return; // Let workflow fail step handle the failure
     }
   } else {
     core.info('No DevConfig files found in this PR');
     
     // Generate preview DevConfig
-    const devConfigContent = await devConfigGenerator.generate(prTitle, changes);
+    devConfigContent = await devConfigGenerator.generate(prTitle, changes);
     core.setOutput('devconfig-content', devConfigContent);
-
-    // Post comment with preview
-    await githubApi.postDevConfigPreviewComment(prNumber, devConfigContent);
   }
+
+  // Write results to file for artifact upload
+  const results = {
+    prNumber: parseInt(prNumber),
+    needsDevConfig: needsDevConfig,
+    hasDevConfig: hasDevConfig,
+    validation: validation,
+    devConfigContent: devConfigContent,
+    timestamp: new Date().toISOString()
+  };
+
+  await fs.writeFile('devconfig-results.json', JSON.stringify(results, null, 2));
+  core.info('DevConfig results written to artifact file');
 }
 
 

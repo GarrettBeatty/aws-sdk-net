@@ -6,9 +6,9 @@ require('./sourcemap-register.js');/******/ (() => { // webpackBootstrap
 
 const core = __nccwpck_require__(7484);
 const github = __nccwpck_require__(3228);
+const fs = (__nccwpck_require__(9896).promises);
 const DevConfigGenerator = __nccwpck_require__(8105);
 const FileAnalyzer = __nccwpck_require__(9723);
-const GitHubApi = __nccwpck_require__(3680);
 const FileOperations = __nccwpck_require__(7631);
 
 async function run() {
@@ -16,7 +16,6 @@ async function run() {
     // Get inputs
     const prTitle = core.getInput('pr-title', { required: true });
     const prNumber = core.getInput('pr-number', { required: true });
-    const githubToken = core.getInput('github-token', { required: true });
     const branchName = core.getInput('branch-name', { required: true });
 
     core.info('Running DevConfig validation...');
@@ -24,7 +23,6 @@ async function run() {
     // Initialize components
     const fileAnalyzer = new FileAnalyzer();
     const devConfigGenerator = new DevConfigGenerator();
-    const githubApi = new GitHubApi(githubToken);
     const fileOps = new FileOperations();
 
     await handleValidate({
@@ -33,7 +31,6 @@ async function run() {
       branchName,
       fileAnalyzer,
       devConfigGenerator,
-      githubApi,
       fileOps
     });
 
@@ -50,7 +47,6 @@ async function handleValidate({
   branchName,
   fileAnalyzer,
   devConfigGenerator,
-  githubApi,
   fileOps
 }) {
   core.info('Validating DevConfig requirements...');
@@ -81,11 +77,14 @@ async function handleValidate({
   const hasDevConfig = await fileOps.hasExistingDevConfig();
   core.setOutput('has-devconfig', hasDevConfig.toString());
 
+  let validation = null;
+  let devConfigContent = null;
+
   if (hasDevConfig) {
     core.info('DevConfig files exist in this PR, validating contents...');
     
     // Validate DevConfig contents against detected changes
-    const validation = await fileOps.validateDevConfigContents(changes);
+    validation = await fileOps.validateDevConfigContents(changes);
     
     if (validation.isValid) {
       core.info('DevConfig validation passed - all changes are covered');
@@ -94,23 +93,29 @@ async function handleValidate({
       core.warning('DevConfig validation failed - missing services or core section');
       
       // Generate corrected DevConfig suggestion
-      const devConfigContent = await devConfigGenerator.generate(prTitle, changes);
+      devConfigContent = await devConfigGenerator.generate(prTitle, changes);
       core.setOutput('devconfig-content', devConfigContent);
-
-      // Post validation error comment
-      await githubApi.postDevConfigValidationError(prNumber, validation, devConfigContent);
-      return; // Let workflow fail step handle the failure
     }
   } else {
     core.info('No DevConfig files found in this PR');
     
     // Generate preview DevConfig
-    const devConfigContent = await devConfigGenerator.generate(prTitle, changes);
+    devConfigContent = await devConfigGenerator.generate(prTitle, changes);
     core.setOutput('devconfig-content', devConfigContent);
-
-    // Post comment with preview
-    await githubApi.postDevConfigPreviewComment(prNumber, devConfigContent);
   }
+
+  // Write results to file for artifact upload
+  const results = {
+    prNumber: parseInt(prNumber),
+    needsDevConfig: needsDevConfig,
+    hasDevConfig: hasDevConfig,
+    validation: validation,
+    devConfigContent: devConfigContent,
+    timestamp: new Date().toISOString()
+  };
+
+  await fs.writeFile('devconfig-results.json', JSON.stringify(results, null, 2));
+  core.info('DevConfig results written to artifact file');
 }
 
 
@@ -619,134 +624,6 @@ class FileOperations {
 }
 
 module.exports = FileOperations;
-
-
-/***/ }),
-
-/***/ 3680:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-const core = __nccwpck_require__(7484);
-const github = __nccwpck_require__(3228);
-
-class GitHubApi {
-  constructor(token) {
-    this.octokit = github.getOctokit(token);
-    this.context = github.context;
-  }
-
-  /**
-   * Post DevConfig preview comment to PR
-   * @param {string} prNumber - Pull request number
-   * @param {string} devConfigContent - Generated DevConfig JSON content
-   */
-  async postDevConfigPreviewComment(prNumber, devConfigContent) {
-    core.info(`Posting DevConfig preview comment to PR #${prNumber}`);
-
-    const commentBody = `## DevConfig File Needed
-
-This PR requires a DevConfig file. Here's the suggested DevConfig:
-
-\`\`\`json
-${devConfigContent}
-\`\`\`
-
-**To add this DevConfig:**
-
-1. Create the file \`./generator/.DevConfigs/pr-${prNumber}.json\`
-2. Copy the JSON above into the file
-3. Commit and push the file to your PR
-
-For more information about DevConfig files, see the [CONTRIBUTING.md](https://github.com/aws/aws-sdk-net/blob/main/CONTRIBUTING.md),`;
-
-    try {
-      await this.octokit.rest.issues.createComment({
-        owner: this.context.repo.owner,
-        repo: this.context.repo.repo,
-        issue_number: parseInt(prNumber),
-        body: commentBody
-      });
-
-      core.info('DevConfig preview comment posted successfully');
-    } catch (error) {
-      core.error(`Failed to post preview comment: ${error.message}`);
-      throw new Error(`GitHub API error: ${error.message}`);
-    }
-  }
-
-  /**
-   * Post DevConfig validation error comment to PR
-   * @param {string} prNumber - Pull request number
-   * @param {Object} validation - Validation result object
-   * @param {string} correctedDevConfig - Corrected DevConfig JSON content
-   */
-  async postDevConfigValidationError(prNumber, validation, correctedDevConfig) {
-    core.info(`Posting DevConfig validation error comment to PR #${prNumber}`);
-
-    let errorDetails = '';
-    
-    if (validation.missingServices.length > 0) {
-      errorDetails += `**Missing Services:** ${validation.missingServices.join(', ')}\n`;
-    }
-    
-    if (validation.missingCore) {
-      errorDetails += `**Missing Core Section:** Core changes detected but no core section in DevConfig\n`;
-    }
-
-    if (validation.error) {
-      errorDetails += `**Error:** ${validation.error}\n`;
-    }
-
-    const commentBody = `## DevConfig Validation Failed ❌
-
-Your PR includes a DevConfig file, but it doesn't cover all the changes in this PR.
-
-${errorDetails}
-${validation.configuredServices.length > 0 ? `**Currently Configured Services:** ${validation.configuredServices.join(', ')}\n` : ''}
-
-**Corrected DevConfig:**
-
-\`\`\`json
-${correctedDevConfig}
-\`\`\`
-
-**To fix this:**
-
-1. Update your DevConfig file with the corrected content above
-2. Make sure all changed services and core components are included
-3. Commit and push the updated file
-
-For more information about DevConfig files, see the [DevConfig Files](https://github.com/aws/aws-sdk-net/blob/main/README.md#devconfig-files) section in the README.md.`;
-
-    try {
-      await this.octokit.rest.issues.createComment({
-        owner: this.context.repo.owner,
-        repo: this.context.repo.repo,
-        issue_number: parseInt(prNumber),
-        body: commentBody
-      });
-
-      core.info('DevConfig validation error comment posted successfully');
-    } catch (error) {
-      core.error(`Failed to post validation error comment: ${error.message}`);
-      throw new Error(`GitHub API error: ${error.message}`);
-    }
-  }
-
-  /**
-   * Get current repository information
-   * @returns {Object} - Repository information
-   */
-  getRepoInfo() {
-    return {
-      owner: this.context.repo.owner,
-      repo: this.context.repo.repo,
-      fullName: `${this.context.repo.owner}/${this.context.repo.repo}`
-    };
-  }
-}
-
-module.exports = GitHubApi;
 
 
 /***/ }),
