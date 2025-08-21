@@ -1,0 +1,25 @@
+name: DevConfig Commenter
+
+on:
+  workflow_run:
+    workflows: ["DevConfig Validator"]
+    types:
+      - completed
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  comment:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Post DevConfig comments
+        uses: ./.github/actions/devconfig-commenter
+        with:
+          workflow-run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

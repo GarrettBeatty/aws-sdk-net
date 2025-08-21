@@ -9,9 +9,6 @@ inputs:
   pr-number:
     description: 'Pull request number'
     required: true
-  github-token:
-    description: 'GitHub token for API access'
-    required: true
   branch-name:
     description: 'Current branch name'
     required: true
