@@ -48,8 +48,14 @@ class FileAnalyzer {
    */
   getCoreChanges(changedFiles) {
     const coreFiles = changedFiles.filter(file => {
-      // Core changes are files NOT in sdk/src/Services/
-      return !file.startsWith('sdk/src/Services/');
+      // Exclude service files
+      if (file.startsWith('sdk/src/Services/')) return false;
+      
+      // Exclude DevConfig files - they shouldn't trigger DevConfig requirements
+      if (file.startsWith('generator/.DevConfigs/')) return false;
+      
+      // Everything else is considered a core change
+      return true;
     });
 
     core.debug(`Core files: ${coreFiles.join(', ')}`);
