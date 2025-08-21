@@ -85,53 +85,63 @@ async function downloadAndProcessArtifacts(octokit, context, workflowRunId) {
 }
 
 async function postDevConfigComment(octokit, context, results) {
-  let commentBody;
-
-  if (results.validation && !results.validation.isValid) {
-    // Validation error comment
-    commentBody = generateValidationErrorComment(results);
-  } else {
-    // Preview comment
-    commentBody = generatePreviewComment(results);
-  }
-
   try {
-    await octokit.rest.issues.createComment({
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      issue_number: results.prNumber,
-      body: commentBody
-    });
+    // Determine what label to add based on results
+    if (!results.needsDevConfig) {
+      // No DevConfig needed
+      await addDevConfigLabel(octokit, context, results.prNumber, 'devconfig-not-needed');
+      core.info('No DevConfig needed - added devconfig-not-needed label');
+      return;
+    }
 
-    core.info(`DevConfig comment posted successfully to PR #${results.prNumber}`);
-
-    // Add devconfig-required label if DevConfig is needed
-    if (results.needsDevConfig && !results.hasDevConfig) {
-      await addDevConfigRequiredLabel(octokit, context, results.prNumber);
-    } else if (results.validation && !results.validation.isValid) {
-      await addDevConfigRequiredLabel(octokit, context, results.prNumber);
+    if (results.validation && !results.validation.isValid) {
+      // DevConfig exists but is invalid
+      const commentBody = generateValidationErrorComment(results);
+      await postComment(octokit, context, results.prNumber, commentBody);
+      await addDevConfigLabel(octokit, context, results.prNumber, 'devconfig-required');
+      core.info('DevConfig validation failed - posted comment and added devconfig-required label');
+    } else if (!results.hasDevConfig) {
+      // DevConfig needed but missing
+      const commentBody = generatePreviewComment(results);
+      await postComment(octokit, context, results.prNumber, commentBody);
+      await addDevConfigLabel(octokit, context, results.prNumber, 'devconfig-required');
+      core.info('DevConfig needed but missing - posted comment and added devconfig-required label');
+    } else {
+      // DevConfig exists and is valid
+      await addDevConfigLabel(octokit, context, results.prNumber, 'devconfig-complete');
+      core.info('DevConfig validation passed - added devconfig-complete label');
     }
 
   } catch (error) {
-    core.error(`Failed to post comment: ${error.message}`);
+    core.error(`Failed to process DevConfig: ${error.message}`);
     throw new Error(`GitHub API error: ${error.message}`);
   }
 }
 
-async function addDevConfigRequiredLabel(octokit, context, prNumber) {
+async function postComment(octokit, context, prNumber, commentBody) {
+  await octokit.rest.issues.createComment({
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    issue_number: prNumber,
+    body: commentBody
+  });
+  core.info(`DevConfig comment posted successfully to PR #${prNumber}`);
+}
+
+async function addDevConfigLabel(octokit, context, prNumber, labelName) {
   try {
-    core.info(`Adding devconfig-required label to PR #${prNumber}`);
+    core.info(`Adding ${labelName} label to PR #${prNumber}`);
     
     await octokit.rest.issues.addLabels({
       owner: context.repo.owner,
       repo: context.repo.repo,
       issue_number: prNumber,
-      labels: ['devconfig-required']
+      labels: [labelName]
     });
 
-    core.info('devconfig-required label added successfully');
+    core.info(`${labelName} label added successfully`);
   } catch (error) {
-    core.warning(`Failed to add devconfig-required label: ${error.message}`);
+    core.warning(`Failed to add ${labelName} label: ${error.message}`);
     // Don't throw - labeling is not critical
   }
 }
