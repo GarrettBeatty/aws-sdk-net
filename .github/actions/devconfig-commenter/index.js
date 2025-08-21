@@ -98,9 +98,35 @@ async function postDevConfigComment(octokit, context, results) {
     });
 
     core.info(`DevConfig comment posted successfully to PR #${results.prNumber}`);
+
+    // Add devconfig-required label if DevConfig is needed
+    if (results.needsDevConfig && !results.hasDevConfig) {
+      await addDevConfigRequiredLabel(octokit, context, results.prNumber);
+    } else if (results.validation && !results.validation.isValid) {
+      await addDevConfigRequiredLabel(octokit, context, results.prNumber);
+    }
+
   } catch (error) {
     core.error(`Failed to post comment: ${error.message}`);
     throw new Error(`GitHub API error: ${error.message}`);
+  }
+}
+
+async function addDevConfigRequiredLabel(octokit, context, prNumber) {
+  try {
+    core.info(`Adding devconfig-required label to PR #${prNumber}`);
+    
+    await octokit.rest.issues.addLabels({
+      owner: context.repo.owner,
+      repo: context.repo.repo,
+      issue_number: prNumber,
+      labels: ['devconfig-required']
+    });
+
+    core.info('devconfig-required label added successfully');
+  } catch (error) {
+    core.warning(`Failed to add devconfig-required label: ${error.message}`);
+    // Don't throw - labeling is not critical
   }
 }
 

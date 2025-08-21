@@ -1,0 +1,13 @@
+name: 'DevConfig Status Check'
+description: 'Checks DevConfig labels and blocks PR if requirements not met'
+author: 'AWS SDK Team'
+
+inputs:
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+    default: ${{ github.token }}
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
