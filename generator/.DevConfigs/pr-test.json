@@ -1,0 +1,11 @@
+{
+  "services": [
+    {
+      "serviceName": "AWSHealth",
+      "type": "patch",
+      "changeLogMessages": [
+        "Update GlobalSuppressions.cs"
+      ]
+    }
+  ]
+}
