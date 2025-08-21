@@ -80,6 +80,9 @@ async function downloadAndProcessArtifacts(octokit, context, workflowRunId) {
 
 async function postDevConfigComment(octokit, context, results) {
   try {
+    // Clean up any existing DevConfig labels first
+    await removeDevConfigLabels(octokit, context, results.prNumber);
+
     // Determine what label to add based on results
     if (!results.needsDevConfig) {
       // No DevConfig needed
@@ -120,6 +123,42 @@ async function postComment(octokit, context, prNumber, commentBody) {
     body: commentBody
   });
   core.info(`DevConfig comment posted successfully to PR #${prNumber}`);
+}
+
+async function removeDevConfigLabels(octokit, context, prNumber) {
+  const devConfigLabels = ['devconfig-required', 'devconfig-complete', 'devconfig-not-needed'];
+  
+  try {
+    // Get current PR labels
+    const { data: issue } = await octokit.rest.issues.get({
+      owner: context.repo.owner,
+      repo: context.repo.repo,
+      issue_number: prNumber
+    });
+
+    const currentLabels = issue.labels.map(label => label.name);
+    const labelsToRemove = devConfigLabels.filter(label => currentLabels.includes(label));
+
+    if (labelsToRemove.length > 0) {
+      core.info(`Removing existing DevConfig labels: ${labelsToRemove.join(', ')}`);
+      
+      for (const labelName of labelsToRemove) {
+        await octokit.rest.issues.removeLabel({
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          issue_number: prNumber,
+          name: labelName
+        });
+      }
+      
+      core.info('Existing DevConfig labels removed successfully');
+    } else {
+      core.info('No existing DevConfig labels to remove');
+    }
+  } catch (error) {
+    core.warning(`Failed to remove existing DevConfig labels: ${error.message}`);
+    // Don't throw - labeling is not critical
+  }
 }
 
 async function addDevConfigLabel(octokit, context, prNumber, labelName) {
