@@ -29,7 +29,7 @@ ${devConfigContent}
 2. Copy the JSON above into the file
 3. Commit and push the file to your PR
 
-For more information about DevConfig files, see the [DevConfig Files](https://github.com/aws/aws-sdk-net/blob/main/README.md#devconfig-files) section in the README.md.`;
+For more information about DevConfig files, see the [CONTRIBUTING.md](https://github.com/aws/aws-sdk-net/blob/main/CONTRIBUTING.md),`;
 
     try {
       await this.octokit.rest.issues.createComment({
