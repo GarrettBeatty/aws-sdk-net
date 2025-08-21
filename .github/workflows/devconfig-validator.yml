@@ -33,3 +33,15 @@ jobs:
           pr-number: ${{ github.event.pull_request.number }}
           branch-name: ${{ github.head_ref || github.ref_name }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fail if DevConfig required but missing
+        if: steps.devconfig-manager.outputs.needs-devconfig == 'true' && steps.devconfig-manager.outputs.has-devconfig == 'false'
+        run: |
+          echo "❌ DevConfig file is required for this PR but not present."
+          echo "Please add the DevConfig file as described in the comment above."
+          echo ""
+          echo "To resolve this:"
+          echo "1. Check the comment posted by the DevConfig Validator"
+          echo "2. Create the suggested DevConfig file"
+          echo "3. Commit and push the file to your PR"
+          exit 1
