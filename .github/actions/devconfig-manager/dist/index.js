@@ -98,18 +98,7 @@ async function handleValidate({
     core.setOutput('devconfig-content', devConfigContent);
   }
 
-  // Write results to file for artifact upload
-  const results = {
-    prNumber: parseInt(prNumber),
-    needsDevConfig: true, // All PRs need DevConfig now
-    hasDevConfig: hasDevConfig,
-    validation: validation,
-    devConfigContent: devConfigContent,
-    timestamp: new Date().toISOString()
-  };
-
-  await fs.writeFile('devconfig-results.json', JSON.stringify(results, null, 2));
-  core.info('DevConfig results written to artifact file');
+  core.info('DevConfig analysis completed');
 }
 
 
