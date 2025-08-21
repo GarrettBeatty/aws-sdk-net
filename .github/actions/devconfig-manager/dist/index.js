@@ -63,24 +63,46 @@ async function handleValidate({
     return;
   }
 
+  // Analyze changes first
+  const changes = await fileAnalyzer.analyzeChanges();
+  const needsDevConfig = changes.coreChanges > 0 || changes.serviceChanges.length > 0;
+  
+  core.setOutput('needs-devconfig', needsDevConfig.toString());
+
+  if (!needsDevConfig) {
+    core.info('No changes detected, DevConfig is not needed');
+    core.setOutput('has-devconfig', 'true'); // Not needed, so consider as satisfied
+    return;
+  }
+
+  core.info(`Changes detected - Core: ${changes.coreChanges}, Services: ${changes.serviceChanges.length}`);
+
   // Check for existing DevConfig files
   const hasDevConfig = await fileOps.hasExistingDevConfig();
   core.setOutput('has-devconfig', hasDevConfig.toString());
 
   if (hasDevConfig) {
-    core.info('DevConfig files already exist in this PR');
-    core.setOutput('needs-devconfig', 'false');
-    return;
-  }
+    core.info('DevConfig files exist in this PR, validating contents...');
+    
+    // Validate DevConfig contents against detected changes
+    const validation = await fileOps.validateDevConfigContents(changes);
+    
+    if (validation.isValid) {
+      core.info('DevConfig validation passed - all changes are covered');
+      return;
+    } else {
+      core.warning('DevConfig validation failed - missing services or core section');
+      
+      // Generate corrected DevConfig suggestion
+      const devConfigContent = await devConfigGenerator.generate(prTitle, changes);
+      core.setOutput('devconfig-content', devConfigContent);
 
-  // Analyze changes
-  const changes = await fileAnalyzer.analyzeChanges();
-  const needsDevConfig = changes.coreChanges > 0 || changes.serviceChanges.length > 0;
-
-  core.setOutput('needs-devconfig', needsDevConfig.toString());
-
-  if (needsDevConfig) {
-    core.info(`Changes detected - Core: ${changes.coreChanges}, Services: ${changes.serviceChanges.length}`);
+      // Post validation error comment
+      await githubApi.postDevConfigValidationError(prNumber, validation, devConfigContent);
+      return; // Let workflow fail step handle the failure
+    }
+  } else {
+    core.info('No DevConfig files found in this PR');
     
     // Generate preview DevConfig
     const devConfigContent = await devConfigGenerator.generate(prTitle, changes);
@@ -88,8 +110,6 @@ async function handleValidate({
 
     // Post comment with preview
     await githubApi.postDevConfigPreviewComment(prNumber, devConfigContent);
-  } else {
-    core.info('No changes detected, DevConfig is not needed');
   }
 }
 
@@ -451,6 +471,133 @@ class FileOperations {
   }
 
   /**
+   * Get DevConfig files that were added/modified in this PR
+   * @returns {string[]} - Array of DevConfig file paths in this PR
+   */
+  async getDevConfigFilesInPR() {
+    try {
+      const diffResult = await this.git.diff(['--name-only', 'origin/main...']);
+      const changedFiles = diffResult.split('\n').filter(file => file.trim() !== '');
+      
+      const devConfigFiles = changedFiles.filter(file => 
+        file.startsWith('generator/.DevConfigs/') && file.endsWith('.json')
+      );
+      
+      return devConfigFiles;
+    } catch (error) {
+      core.warning(`Error getting DevConfig files: ${error.message}`);
+      return [];
+    }
+  }
+
+  /**
+   * Read and parse DevConfig file contents
+   * @param {string} filePath - Path to DevConfig file
+   * @returns {Object|null} - Parsed DevConfig content or null if invalid
+   */
+  async readDevConfigFile(filePath) {
+    try {
+      const content = await fs.readFile(filePath, 'utf8');
+      return JSON.parse(content);
+    } catch (error) {
+      core.warning(`Error reading DevConfig file ${filePath}: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Validate that DevConfig contains all required services
+   * @param {Object} changes - Changes detected by file analyzer
+   * @returns {Object} - Validation result with isValid and missing services
+   */
+  async validateDevConfigContents(changes) {
+    core.info('Validating DevConfig contents against detected changes...');
+    
+    try {
+      // Get DevConfig files in this PR
+      const devConfigFiles = await this.getDevConfigFilesInPR();
+      
+      if (devConfigFiles.length === 0) {
+        return {
+          isValid: false,
+          missingServices: changes.serviceChanges,
+          missingCore: changes.coreChanges > 0,
+          error: 'No DevConfig files found in PR'
+        };
+      }
+
+      // Parse all DevConfig files in PR
+      const parsedConfigs = [];
+      for (const filePath of devConfigFiles) {
+        const config = await this.readDevConfigFile(filePath);
+        if (config) {
+          parsedConfigs.push(config);
+        }
+      }
+
+      if (parsedConfigs.length === 0) {
+        return {
+          isValid: false,
+          missingServices: changes.serviceChanges,
+          missingCore: changes.coreChanges > 0,
+          error: 'Could not parse any DevConfig files in PR'
+        };
+      }
+
+      // Collect all services mentioned in DevConfig files
+      const configuredServices = new Set();
+      let hasCore = false;
+
+      for (const config of parsedConfigs) {
+        // Check for core section
+        if (config.core) {
+          hasCore = true;
+        }
+
+        // Check for services
+        if (config.services && Array.isArray(config.services)) {
+          for (const service of config.services) {
+            if (service.serviceName) {
+              configuredServices.add(service.serviceName);
+            }
+          }
+        }
+      }
+
+      // Check what's missing
+      const missingServices = changes.serviceChanges.filter(
+        service => !configuredServices.has(service)
+      );
+      const missingCore = changes.coreChanges > 0 && !hasCore;
+
+      const isValid = missingServices.length === 0 && !missingCore;
+
+      core.info(`Validation result: ${isValid ? 'VALID' : 'INVALID'}`);
+      if (!isValid) {
+        core.info(`Missing services: ${missingServices.join(', ')}`);
+        if (missingCore) core.info('Missing core section');
+      }
+
+      return {
+        isValid,
+        missingServices,
+        missingCore,
+        configuredServices: Array.from(configuredServices),
+        error: null
+      };
+
+    } catch (error) {
+      core.error(`DevConfig validation failed: ${error.message}`);
+      return {
+        isValid: false,
+        missingServices: changes.serviceChanges,
+        missingCore: changes.coreChanges > 0,
+        error: error.message
+      };
+    }
+  }
+
+  /**
    * Check if a directory exists
    * @param {string} dirPath - Directory path to check
    * @returns {boolean} - True if directory exists
@@ -517,6 +664,65 @@ For more information about DevConfig files, see the [DevConfig Files](https://gi
       core.info('DevConfig preview comment posted successfully');
     } catch (error) {
       core.error(`Failed to post preview comment: ${error.message}`);
+      throw new Error(`GitHub API error: ${error.message}`);
+    }
+  }
+
+  /**
+   * Post DevConfig validation error comment to PR
+   * @param {string} prNumber - Pull request number
+   * @param {Object} validation - Validation result object
+   * @param {string} correctedDevConfig - Corrected DevConfig JSON content
+   */
+  async postDevConfigValidationError(prNumber, validation, correctedDevConfig) {
+    core.info(`Posting DevConfig validation error comment to PR #${prNumber}`);
+
+    let errorDetails = '';
+    
+    if (validation.missingServices.length > 0) {
+      errorDetails += `**Missing Services:** ${validation.missingServices.join(', ')}\n`;
+    }
+    
+    if (validation.missingCore) {
+      errorDetails += `**Missing Core Section:** Core changes detected but no core section in DevConfig\n`;
+    }
+
+    if (validation.error) {
+      errorDetails += `**Error:** ${validation.error}\n`;
+    }
+
+    const commentBody = `## DevConfig Validation Failed ❌
+
+Your PR includes a DevConfig file, but it doesn't cover all the changes in this PR.
+
+${errorDetails}
+${validation.configuredServices.length > 0 ? `**Currently Configured Services:** ${validation.configuredServices.join(', ')}\n` : ''}
+
+**Corrected DevConfig:**
+
+\`\`\`json
+${correctedDevConfig}
+\`\`\`
+
+**To fix this:**
+
+1. Update your DevConfig file with the corrected content above
+2. Make sure all changed services and core components are included
+3. Commit and push the updated file
+
+For more information about DevConfig files, see the [DevConfig Files](https://github.com/aws/aws-sdk-net/blob/main/README.md#devconfig-files) section in the README.md.`;
+
+    try {
+      await this.octokit.rest.issues.createComment({
+        owner: this.context.repo.owner,
+        repo: this.context.repo.repo,
+        issue_number: parseInt(prNumber),
+        body: commentBody
+      });
+
+      core.info('DevConfig validation error comment posted successfully');
+    } catch (error) {
+      core.error(`Failed to post validation error comment: ${error.message}`);
       throw new Error(`GitHub API error: ${error.message}`);
     }
   }
