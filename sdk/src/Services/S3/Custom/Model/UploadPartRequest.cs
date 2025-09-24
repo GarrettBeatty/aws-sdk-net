@@ -733,7 +733,7 @@ namespace Amazon.S3.Model
             set { this.useChunkEncoding = value; }
         }
 
-        /// <summary>      
+        /// <summary>
         /// <para><b>WARNING: Setting DisablePayloadSigning to true disables the SigV4 payload signing 
         /// data integrity check on this request.</b></para>  
         /// <para>If using SigV4, the DisablePayloadSigning flag controls if the payload should be 
@@ -751,6 +751,20 @@ namespace Amazon.S3.Model
         /// source of data integrity verification.</para>
         /// </summary>
         public bool? DisablePayloadSigning { get; set; }
+
+        /// <summary>
+        /// <para><b>WARNING: Setting DisablePartialWrapperStream to true disables the automatic 
+        /// stream size validation and requires the developer to ensure the stream size matches 
+        /// the part size.</b></para>
+        /// <para>When true, the InputStream will not be wrapped in a PartialWrapperStream, which 
+        /// allows for the use of nonseekable streams. This is intended for use cases where 
+        /// DisablePayloadSigning is true and the developer guarantees that the stream size 
+        /// is exactly equal to the part size (or smaller for the last part).</para>
+        /// <para>Use this option only when you have a nonseekable stream that you cannot convert 
+        /// to a seekable stream and you are certain the stream contains exactly the right amount 
+        /// of data for the part.</para>
+        /// </summary>
+        public bool? DisablePartialWrapperStream { get; set; }
 
         /// <summary>
         /// Checks if the FilePosition property is set.

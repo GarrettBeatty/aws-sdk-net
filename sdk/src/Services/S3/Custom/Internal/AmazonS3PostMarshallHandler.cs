@@ -124,15 +124,35 @@ namespace Amazon.S3.Internal
         {
             if (uploadPartRequest.InputStream != null)
             {
-                // Wrap input stream in partial wrapper (to upload only part of the stream)
-                var partialStream = new PartialWrapperStream(uploadPartRequest.InputStream, uploadPartRequest.PartSize.GetValueOrDefault());
-                if (partialStream.Length > 0 && !(uploadPartRequest.DisablePayloadSigning ?? false))
+                Stream streamToUse;
+                long streamLength;
+
+                // Check if partial wrapper should be skipped for nonseekable streams
+                if (uploadPartRequest.DisablePartialWrapperStream ?? false)
+                {
+                    streamToUse = uploadPartRequest.InputStream;
+                    // For nonseekable streams, use PartSize as the length
+                    streamLength = uploadPartRequest.PartSize.GetValueOrDefault();
+                    
+                    // Validate that PartSize is provided when disabling wrapper
+                    if (streamLength <= 0)
+                        throw new ArgumentException("PartSize must be specified when DisablePartialWrapperStream is true");
+                }
+                else
+                {
+                    // Wrap input stream in partial wrapper (to upload only part of the stream)
+                    var partialStream = new PartialWrapperStream(uploadPartRequest.InputStream, uploadPartRequest.PartSize.GetValueOrDefault());
+                    streamToUse = partialStream;
+                    streamLength = partialStream.Length;
+                }
+
+                if (streamLength > 0 && !(uploadPartRequest.DisablePayloadSigning ?? false))
                     request.UseChunkEncoding = uploadPartRequest.UseChunkEncoding;
                 if (!request.Headers.ContainsKey(HeaderKeys.ContentLengthHeader))
-                    request.Headers.Add(HeaderKeys.ContentLengthHeader, partialStream.Length.ToString(CultureInfo.InvariantCulture));
+                    request.Headers.Add(HeaderKeys.ContentLengthHeader, streamLength.ToString(CultureInfo.InvariantCulture));
 
                 request.DisablePayloadSigning = uploadPartRequest.DisablePayloadSigning;
-                uploadPartRequest.InputStream = partialStream;
+                uploadPartRequest.InputStream = streamToUse;
             }
 
             var defaultChecksumValidationDisabled = uploadPartRequest.DisableDefaultChecksumValidation ?? AWSConfigsS3.DisableDefaultChecksumValidation;
