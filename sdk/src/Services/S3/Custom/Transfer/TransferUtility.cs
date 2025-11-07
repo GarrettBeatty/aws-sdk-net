@@ -335,7 +335,7 @@ namespace Amazon.S3.Transfer
                 throw new ArgumentNullException("filePath");
             }
 #if BCL     // Validations for Win RT/Win Phone are done in GetUploadCommand method's call to validate.
-            // test
+            // tefdsafdsafdsfsdast
             if (!File.Exists(filePath))
             {
                 throw new ArgumentException(string.Format(CultureInfo.InvariantCulture, "The file {0} does not exist!", filePath));
